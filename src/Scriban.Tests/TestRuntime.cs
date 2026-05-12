@@ -210,6 +210,101 @@ namespace Scriban.Tests
         }
 
         [Test]
+        public void ArrayAddShouldRespectLoopLimitForInternalIteration()
+        {
+            var context = new TemplateContext
+            {
+                LoopLimit = 5
+            };
+            context.PushGlobal(new ScriptObject
+            {
+                { "numbers", Enumerable.Range(0, 10).ToList() }
+            });
+
+            var template = Template.Parse("{{ numbers | array.add 10 | array.size }}");
+
+            var exception = Assert.Throws<ScriptRuntimeException>(() => template.Render(context));
+
+            StringAssert.Contains("iteration limit `5`", exception!.Message);
+        }
+
+        [Test]
+        public void ArrayRemoveAtShouldRespectLoopLimitForInternalIteration()
+        {
+            var context = new TemplateContext
+            {
+                LoopLimit = 5
+            };
+            context.PushGlobal(new ScriptObject
+            {
+                { "numbers", Enumerable.Range(0, 10).ToList() }
+            });
+
+            var template = Template.Parse("{{ numbers | array.remove_at 0 | array.size }}");
+
+            var exception = Assert.Throws<ScriptRuntimeException>(() => template.Render(context));
+
+            StringAssert.Contains("iteration limit `5`", exception!.Message);
+        }
+
+        [Test]
+        public void ObjectSizeShouldRespectLoopLimitForInternalIteration()
+        {
+            var context = new TemplateContext
+            {
+                LoopLimit = 5
+            };
+            context.PushGlobal(new ScriptObject
+            {
+                { "numbers", Enumerable.Range(0, 10) }
+            });
+
+            var template = Template.Parse("{{ numbers | object.size }}");
+
+            var exception = Assert.Throws<ScriptRuntimeException>(() => template.Render(context));
+
+            StringAssert.Contains("iteration limit `5`", exception!.Message);
+        }
+
+        [Test]
+        public void ObjectKeysShouldRespectLoopLimitForInternalIteration()
+        {
+            var context = new TemplateContext
+            {
+                LoopLimit = 5
+            };
+            context.PushGlobal(new ScriptObject
+            {
+                { "items", Enumerable.Range(0, 10).ToDictionary(index => index.ToString(CultureInfo.InvariantCulture), index => (object?)index) }
+            });
+
+            var template = Template.Parse("{{ items | object.keys | array.size }}");
+
+            var exception = Assert.Throws<ScriptRuntimeException>(() => template.Render(context));
+
+            StringAssert.Contains("iteration limit `5`", exception!.Message);
+        }
+
+        [Test]
+        public void ObjectValuesShouldRespectLoopLimitForInternalIteration()
+        {
+            var context = new TemplateContext
+            {
+                LoopLimit = 5
+            };
+            context.PushGlobal(new ScriptObject
+            {
+                { "items", Enumerable.Range(0, 10).ToDictionary(index => index.ToString(CultureInfo.InvariantCulture), index => (object?)index) }
+            });
+
+            var template = Template.Parse("{{ items | object.values | array.size }}");
+
+            var exception = Assert.Throws<ScriptRuntimeException>(() => template.Render(context));
+
+            StringAssert.Contains("iteration limit `5`", exception!.Message);
+        }
+
+        [Test]
         public void ArrayJoinShouldRespectLoopLimitForInternalIteration()
         {
             var context = new TemplateContext
@@ -245,6 +340,20 @@ namespace Scriban.Tests
             var exception = Assert.Throws<ScriptRuntimeException>(() => template.Render(context));
 
             StringAssert.Contains("iteration limit `5`", exception!.Message);
+        }
+
+        [Test]
+        public void ArrayInsertAtShouldRespectLoopLimitForInternalIteration()
+        {
+            var context = new TemplateContext
+            {
+                LoopLimit = 10
+            };
+            var template = Template.Parse("{{ [1] | array.insert_at 200000000 'x' | array.size }}");
+
+            var exception = Assert.Throws<ScriptRuntimeException>(() => template.Render(context));
+
+            StringAssert.Contains("iteration limit `10`", exception!.Message);
         }
 
         [Test]

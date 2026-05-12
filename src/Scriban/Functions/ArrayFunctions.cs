@@ -26,9 +26,22 @@ namespace Scriban.Functions
 #endif
     partial class ArrayFunctions : ScriptObject
     {
+        [ScriptMemberIgnore]
+        public static IEnumerable Add(IEnumerable? list, object? value)
+        {
+            if (list is null)
+            {
+                return new ScriptRange { value };
+            }
+
+            return list is IList ? (IEnumerable)new ScriptArray(list) { value } : new ScriptRange(list) { value };
+        }
+
         /// <summary>
         /// Adds a value to the input list.
         /// </summary>
+        /// <param name="context">The template context</param>
+        /// <param name="span">The source span</param>
         /// <param name="list">The input list</param>
         /// <param name="value">The value to add at the end of the list</param>
         /// <returns>A new list with the value added</returns>
@@ -40,14 +53,24 @@ namespace Scriban.Functions
         /// [1, 2, 3, 4]
         /// ```
         /// </remarks>
-        public static IEnumerable Add(IEnumerable? list, object? value)
+        public static IEnumerable Add(TemplateContext context, SourceSpan span, IEnumerable? list, object? value)
         {
             if (list is null)
             {
                 return new ScriptRange { value };
             }
 
-            return list is IList ? (IEnumerable)new ScriptArray(list) { value } : new ScriptRange(list) { value };
+            var array = new ScriptArray();
+            var loopStep = 0;
+            var loopType = GetLoopType(list);
+            foreach (var item in list)
+            {
+                context.StepLoop(span, ref loopStep, loopType);
+                array.Add(item);
+            }
+
+            array.Add(value);
+            return array;
         }
 
 
@@ -351,9 +374,31 @@ namespace Scriban.Functions
             return null;
         }
 
+        [ScriptMemberIgnore]
+        public static IEnumerable InsertAt(IEnumerable? list, int index, object? value)
+        {
+            if (index < 0)
+            {
+                index = 0;
+            }
+
+            var array = list is null ? new ScriptArray() : new ScriptArray(list);
+            // Make sure that the list has already inserted elements before the index
+            for (int i = array.Count; i < index; i++)
+            {
+                array.Add(null);
+            }
+
+            array.Insert(index, value);
+
+            return array;
+        }
+
         /// <summary>
         /// Inserts a `value` at the specified index in the input `list`.
         /// </summary>
+        /// <param name="context">The template context</param>
+        /// <param name="span">The source span</param>
         /// <param name="list">The input list</param>
         /// <param name="index">The index in the list where to insert the element</param>
         /// <param name="value">The value to insert</param>
@@ -366,17 +411,29 @@ namespace Scriban.Functions
         /// ["a", "b", "Yo", "c"]
         /// ```
         /// </remarks>
-        public static IEnumerable InsertAt(IEnumerable? list, int index, object? value)
+        public static IEnumerable InsertAt(TemplateContext context, SourceSpan span, IEnumerable? list, int index, object? value)
         {
             if (index < 0)
             {
                 index = 0;
             }
 
-            var array = list is null ? new ScriptArray() : new ScriptArray(list);
+            var array = new ScriptArray();
+            var loopStep = 0;
+            if (list is not null)
+            {
+                var loopType = GetLoopType(list);
+                foreach (var item in list)
+                {
+                    context.StepLoop(span, ref loopStep, loopType);
+                    array.Add(item);
+                }
+            }
+
             // Make sure that the list has already inserted elements before the index
             for (int i = array.Count; i < index; i++)
             {
+                context.StepLoop(span, ref loopStep);
                 array.Add(null);
             }
 
@@ -620,27 +677,7 @@ namespace Scriban.Functions
             return ScriptRange.Offset(context, span, list, index);
         }
 
-        /// <summary>
-        /// Removes an element at the specified `index` from the input `list`
-        /// </summary>
-        /// <param name="list">The input list</param>
-        /// <param name="index">The index of a list to return elements</param>
-        /// <returns>A new list with the element removed. If index is negative, remove at the end of the list.</returns>
-        /// <remarks>
-        /// ```scriban-html
-        /// {{ [4, 5, 6, 7, 8] | array.remove_at 2 }}
-        /// ```
-        /// ```html
-        /// [4, 5, 7, 8]
-        /// ```
-        /// If the `index` is negative, removes at the end of the list (notice that we need to put -1 in parenthesis to avoid confusing the parser with a binary `-` operation):
-        /// ```scriban-html
-        /// {{ [4, 5, 6, 7, 8] | array.remove_at (-1) }}
-        /// ```
-        /// ```html
-        /// [4, 5, 6, 7]
-        /// ```
-        /// </remarks>
+        [ScriptMemberIgnore]
         public static IList RemoveAt(IList? list, int index)
         {
             if (list is null)
@@ -661,6 +698,58 @@ namespace Scriban.Functions
                 list.RemoveAt(index);
             }
             return list;
+        }
+
+        /// <summary>
+        /// Removes an element at the specified `index` from the input `list`
+        /// </summary>
+        /// <param name="context">The template context</param>
+        /// <param name="span">The source span</param>
+        /// <param name="list">The input list</param>
+        /// <param name="index">The index of a list to return elements</param>
+        /// <returns>A new list with the element removed. If index is negative, remove at the end of the list.</returns>
+        /// <remarks>
+        /// ```scriban-html
+        /// {{ [4, 5, 6, 7, 8] | array.remove_at 2 }}
+        /// ```
+        /// ```html
+        /// [4, 5, 7, 8]
+        /// ```
+        /// If the `index` is negative, removes at the end of the list (notice that we need to put -1 in parenthesis to avoid confusing the parser with a binary `-` operation):
+        /// ```scriban-html
+        /// {{ [4, 5, 6, 7, 8] | array.remove_at (-1) }}
+        /// ```
+        /// ```html
+        /// [4, 5, 6, 7]
+        /// ```
+        /// </remarks>
+        public static IList RemoveAt(TemplateContext context, SourceSpan span, IList? list, int index)
+        {
+            if (list is null)
+            {
+                return new ScriptArray();
+            }
+
+            var array = new ScriptArray();
+            var loopStep = 0;
+            var loopType = GetLoopType(list);
+            foreach (var item in list)
+            {
+                context.StepLoop(span, ref loopStep, loopType);
+                array.Add(item);
+            }
+
+            // If index is negative, start from the end
+            if (index < 0)
+            {
+                index = array.Count + index;
+            }
+
+            if (index >= 0 && index < array.Count)
+            {
+                array.RemoveAt(index);
+            }
+            return array;
         }
 
         [ScriptMemberIgnore]

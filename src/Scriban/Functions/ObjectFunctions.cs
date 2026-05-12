@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -260,32 +261,17 @@ namespace Scriban.Functions
 #pragma warning restore CS0108
         {
             if (value is null) return new ScriptArray();
-            if (value is IDictionary dict) return new ScriptArray(dict.Keys);
-            if (value is IDictionary<string, object?> dictStringObject) return new ScriptArray(dictStringObject.Keys);
-            if (value is IScriptObject scriptObj) return new ScriptArray(scriptObj.GetMembers());
+            if (value is IDictionary dict) return ToScriptArray(context, context.CurrentSpan, dict.Keys);
+            if (value is IDictionary<string, object?> dictStringObject) return ToScriptArray(context, context.CurrentSpan, dictStringObject.Keys);
+            if (value is IScriptObject scriptObj) return ToScriptArray(context, context.CurrentSpan, scriptObj.GetMembers());
             // Don't try to return members of a custom function
             if (value is IScriptCustomFunction) return new ScriptArray();
 
             var accessor = context.GetMemberAccessor(value);
-            return new ScriptArray(accessor.GetMembers(context, context.CurrentSpan, value));
+            return ToScriptArray(context, context.CurrentSpan, accessor.GetMembers(context, context.CurrentSpan, value));
         }
 
-        /// <summary>
-        /// Returns the size of the input object.
-        /// - If the input object is a string, it will return the length
-        /// - If the input is a list, it will return the number of elements
-        /// - If the input is an object, it will return the number of members
-        /// </summary>
-        /// <param name="value">The input object.</param>
-        /// <returns>The size of the input object.</returns>
-        /// <remarks>
-        /// ```scriban-html
-        /// {{ [1, 2, 3] | object.size }}
-        /// ```
-        /// ```html
-        /// 3
-        /// ```
-        /// </remarks>
+        [ScriptMemberIgnore]
         public static int Size(object? value)
         {
             if (value is null)
@@ -301,6 +287,45 @@ namespace Scriban.Functions
             if (value is IEnumerable)
             {
                 return ArrayFunctions.Size((IEnumerable) value);
+            }
+
+            // Should we throw an exception?
+            return 0;
+        }
+
+        /// <summary>
+        /// Returns the size of the input object.
+        /// - If the input object is a string, it will return the length
+        /// - If the input is a list, it will return the number of elements
+        /// - If the input is an object, it will return the number of members
+        /// </summary>
+        /// <param name="context">The template context</param>
+        /// <param name="span">The source span</param>
+        /// <param name="value">The input object.</param>
+        /// <returns>The size of the input object.</returns>
+        /// <remarks>
+        /// ```scriban-html
+        /// {{ [1, 2, 3] | object.size }}
+        /// ```
+        /// ```html
+        /// 3
+        /// ```
+        /// </remarks>
+        public static int Size(TemplateContext context, SourceSpan span, object? value)
+        {
+            if (value is null)
+            {
+                return 0;
+            }
+
+            if (value is string)
+            {
+                return StringFunctions.Size((string) value);
+            }
+
+            if (value is IEnumerable)
+            {
+                return ArrayFunctions.Size(context, span, (IEnumerable) value);
             }
 
             // Should we throw an exception?
@@ -444,8 +469,10 @@ namespace Scriban.Functions
             if (value is IDictionary<string, object?> dictStringObject)
             {
                 var values = new ScriptArray();
+                var loopStep = 0;
                 foreach (var memberValue in dictStringObject.Values)
                 {
+                    context.StepLoop(context.CurrentSpan, ref loopStep);
                     values.Add(memberValue);
                 }
                 return values;
@@ -455,12 +482,33 @@ namespace Scriban.Functions
 
             var accessor = context.GetMemberAccessor(value);
             var scriptArray = new ScriptArray();
+            var memberLoopStep = 0;
             foreach(var member in accessor.GetMembers(context, context.CurrentSpan, value))
             {
+                context.StepLoop(context.CurrentSpan, ref memberLoopStep);
                 _ = accessor.TryGetValue(context, context.CurrentSpan, value, member, out var memberValue);
                 scriptArray.Add(memberValue);
             }
             return scriptArray;
+        }
+
+        private static ScriptArray ToScriptArray(TemplateContext context, SourceSpan span, IEnumerable values)
+        {
+            var result = new ScriptArray();
+            var loopStep = 0;
+            var loopType = GetLoopType(values);
+            foreach (var value in values)
+            {
+                context.StepLoop(span, ref loopStep, loopType);
+                result.Add(value);
+            }
+
+            return result;
+        }
+
+        private static TemplateContext.LoopType GetLoopType(IEnumerable values)
+        {
+            return values is IQueryable ? TemplateContext.LoopType.Queryable : TemplateContext.LoopType.Default;
         }
 
         /// <summary>
